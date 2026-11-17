@@ -10,11 +10,11 @@ public static class LinkedShop
     /// <summary>
     /// A signed-in company with a connected shop whose two products are imported and linked:
     /// coffee (product 10, SKU KF-ETI-250, 24 in stock) and a T-shirt variation (51 of product 50,
-    /// SKU MAJ-M-SI, 5 in stock).
+    /// SKU MAJ-M-SI, 5 in stock). The company is <paramref name="client"/>'s when given, otherwise a new one.
     /// </summary>
-    public static async Task<(HttpClient Client, Guid ChannelId)> CreateAsync(ZaliheApiFactory factory)
+    public static async Task<(HttpClient Client, Guid ChannelId)> CreateAsync(ZaliheApiFactory factory, HttpClient? client = null)
     {
-        var client = await factory.CreateSignedInClientAsync();
+        client ??= await factory.CreateSignedInClientAsync();
         factory.Shop.RespondWith(_ => FakeShopHandler.Json("[]"));
         var connect = await client.PostAsJsonAsync("/api/channels/woocommerce",
             new { baseUrl = "zrno.rs", consumerKey = "ck_1234567890abcdef", consumerSecret = "cs_1234567890abcdef" });

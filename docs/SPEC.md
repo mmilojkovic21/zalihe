@@ -192,6 +192,8 @@ Shopify i drugi kanali (11.6) čekaju. Firme bez webshopa mogu da koriste aplika
 
 ### 11.1 Obaveštenja u realnom vremenu (SignalR) — prva stavka posle v1
 Promene stanja (npr. porudžbina iz WooCommerce-a) se odmah prikazuju na otvorenim ekranima, bez osvežavanja.
+
+**Stanje (novembar 2026):** napravljeno. Hub `/hubs/changes` šalje poruku `dataChanged` posle sačuvanih (commitovanih) izmena artikala, stanja, porudžbina i prijema, iz zahteva i iz pozadinskih poslova.
 - Hub sa grupama po `TenantId`, uz proveru pripadnosti firmi pri povezivanju
 - Obaveštenje se šalje posle uspešne transakcije kretanja zaliha, i iz Hangfire poslova preko `IHubContext`-a
 - Frontend na poruku samo invalidira odgovarajuće TanStack Query upite (ne prenosi podatke kroz SignalR)

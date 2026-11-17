@@ -115,6 +115,29 @@ COMMIT
 - **Roba se vraća istom artiklu** sa kog je skinuta, čak i ako je proizvod u međuvremenu povezan sa drugim artiklom.
 - **Dva događaja za novu porudžbinu u istom trenutku** (WooCommerce šalje `order.created` i odmah `order.updated`): porudžbina se upisuje sa `INSERT … ON CONFLICT DO NOTHING`, pa drugi upis sačeka prvu transakciju i ne uradi ništa, a zatim sačeka zaključavanje. Nijedan ne pada.
 
+### Obaveštenja u realnom vremenu (SignalR, SPEC 11.1)
+
+Otvoren ekran sam prikaže promenu koju je napravio neko drugi iz firme ili prodavnica, bez osvežavanja stranice.
+
+```
+SaveChanges (Item, ItemImage, StockLevel, StockMovement, ExternalOrder(+Line), Receipt(+Line))
+  │  AppDbContext zapamti firme čiji su se podaci promenili
+  ▼
+bez transakcije: odmah   │   u transakciji: tek posle COMMIT-a (DataChangeTransactionInterceptor);
+                         │   posle ROLLBACK-a se zaboravi
+  ▼
+IDataChangeNotifier ──► HubDataChangeNotifier ──► ChangesHub, grupa "tenant:{id}" ──► "dataChanged" (bez podataka)
+  ▼
+web: useLiveUpdates ──► sakupi poruke 1 s ──► invalidateQueries za /api/items, orders, receipts, stock, dashboard, reports
+```
+
+- **Poruka ne nosi podatke**, pa uloge ne utiču na hub: ekran ponovo pita API, a API vraća ono što uloga sme da vidi (npr. bez nabavnih cena).
+- **Firma se uzima iz prijave** (claim `tenant_id` u `OnConnectedAsync`), nikad od klijenta, pa niko ne može da uđe u grupu druge firme. Hub traži prijavu i zatvara vezu kad prijava istekne.
+- **Jedno mesto za sve:** obaveštenje šalje `AppDbContext`, pa ga dobijaju i zahtevi i Hangfire poslovi (webhookovi, usklađivanje porudžbina) bez koda u servisima. Knjigovodstvo sinhronizacije (veze sa proizvodima, status kanala, webhook događaji) je namerno izostavljeno, da slanje stanja u prodavnicu ne osvežava sve ekrane.
+- **Tab koji je napravio promenu ne dobija poruku:** `customFetch` uz svaki zahtev koji menja podatke šalje `X-Connection-Id` (id SignalR veze tog taba), a server šalje grupi bez te veze (`GroupExcept`). Taj tab već osvežava ono što je promenio u `onSuccess` mutacije, pa se izbegava suvišan upit. Ostali tabovi istog korisnika i ostali iz firme dobijaju poruku. Zaglavlje šalje klijent, ali njime može samo sebi da preskoči poruku, jer tuđi id ne vidi. Pozadinski poslovi nemaju zahtev, pa poruka ide svima.
+- **Propuštene poruke nisu problem:** posle ponovnog povezivanja frontend osveži sve podatke firme. Prvo povezivanje se ponavlja dok ne uspe (0, 2, 5, 10, pa na 30 s).
+- **Fajlovi:** `Application/Common/IDataChangeNotifier.cs`, `Infrastructure/Persistence/DataChangeTransactionInterceptor.cs`, `Web/Realtime/ChangesHub.cs` i `HubDataChangeNotifier.cs`, `web/src/lib/liveUpdates.ts` (hook se poziva u `AppLayout`). Testovi: `IntegrationTests/Realtime/ChangesHubTests.cs` (negotiate pa pravi WebSocket sa SignalR JSON protokolom preko `HubListener`-a, bez SignalR klijent paketa) i `liveUpdates.test.ts`.
+
 ## 3. Folder struktura
 
 ```

@@ -15,9 +15,23 @@ using Zalihe.Infrastructure.Identity;
 
 namespace Zalihe.Infrastructure.Persistence;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext tenantContext)
+public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext tenantContext, IDataChangeNotifier changeNotifier)
     : IdentityDbContext<User, IdentityRole<Guid>, Guid>(options), IAppDbContext
 {
+    /// <summary>
+    /// Data shown on the company's screens (items, stock, orders, receipts). A saved change to any of them tells
+    /// the company's open screens to reload (SPEC 11.1). Shop sync bookkeeping (mappings, channel status,
+    /// webhook events) is left out, so a background push doesn't refresh every screen.
+    /// </summary>
+    private static readonly HashSet<Type> ScreenData =
+    [
+        typeof(Item), typeof(ItemImage), typeof(StockLevel), typeof(StockMovement),
+        typeof(ExternalOrder), typeof(ExternalOrderLine), typeof(Receipt), typeof(ReceiptLine),
+    ];
+
+    /// <summary>Companies whose screen data was saved but not yet announced, because a transaction is open.</summary>
+    private readonly HashSet<Guid> _changedTenants = [];
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Item> Items => Set<Item>();
     public DbSet<ItemChange> ItemChanges => Set<ItemChange>();
@@ -408,21 +422,48 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
             .Where(e => e.ReceivedAt < before)
             .ExecuteDeleteAsync(ct);
 
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken ct = default)
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken ct = default)
     {
-        EnsureNewDataBelongsToCurrentTenant();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, ct);
+        var changed = CheckChanges();
+        var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct);
+        _changedTenants.UnionWith(changed);
+        if (Database.CurrentTransaction is null) await AnnounceChangesAsync();
+        return result;
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        EnsureNewDataBelongsToCurrentTenant();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        var changed = CheckChanges();
+        var result = base.SaveChanges(acceptAllChangesOnSuccess);
+        _changedTenants.UnionWith(changed);
+        // The notifier never throws, so nothing is lost by not waiting for it.
+        if (Database.CurrentTransaction is null) _ = AnnounceChangesAsync();
+        return result;
     }
 
-    // Last line of defence: a bug can't write one company's data into another company.
-    private void EnsureNewDataBelongsToCurrentTenant()
+    /// <summary>
+    /// Tells the companies whose screen data changed since the last announcement. Called after a save outside a
+    /// transaction and by <see cref="DataChangeTransactionInterceptor"/> after a commit, so a rolled back change
+    /// is never announced.
+    /// </summary>
+    internal async Task AnnounceChangesAsync()
     {
+        if (_changedTenants.Count == 0) return;
+        Guid[] tenants = [.. _changedTenants];
+        _changedTenants.Clear();
+        await changeNotifier.DataChangedAsync(tenants);
+    }
+
+    /// <summary>Forgets changes of a transaction that was rolled back.</summary>
+    internal void DiscardChanges() => _changedTenants.Clear();
+
+    /// <summary>
+    /// Last line of defence: a bug can't write one company's data into another company. Also returns the
+    /// companies whose screen data is about to change.
+    /// </summary>
+    private HashSet<Guid> CheckChanges()
+    {
+        var changed = new HashSet<Guid>();
         foreach (var entry in ChangeTracker.Entries<ITenantOwned>())
         {
             if (entry.State == EntityState.Added && entry.Entity.TenantId != CurrentTenantId)
@@ -430,6 +471,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
                 throw new InvalidOperationException(
                     $"{entry.Entity.GetType().Name} belongs to a different tenant than the current one.");
             }
+
+            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+                && ScreenData.Contains(entry.Entity.GetType()))
+            {
+                changed.Add(entry.Entity.TenantId);
+            }
         }
+
+        return changed;
     }
 }

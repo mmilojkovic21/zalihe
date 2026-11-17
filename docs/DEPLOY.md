@@ -340,7 +340,7 @@ app deploy lagerko-dev
 
 ## 14. SignalR (SPEC 11.1)
 
-Hub se još ne pravi, ali je postavka spremna. Dogovor je da hubovi žive pod `/hubs/...`.
+Hub je `/hubs/changes` (vidi ARCHITECTURE.md, „Obaveštenja u realnom vremenu”). Hubovi žive pod `/hubs/...`.
 
 - **Nginx:** konfiguracija iz skripte `app` već šalje `Upgrade` i `Connection "upgrade"`, a `proxy_read_timeout 300s` je duži od SignalR pinga (15 s).
 - **Caddy:** prosleđuje WebSocket sam.

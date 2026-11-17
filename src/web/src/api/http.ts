@@ -8,6 +8,17 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS']
 // loaders and animations as on a slow connection. Production builds always use 0.
 const DEV_DELAY_MS = import.meta.env.DEV ? Number(import.meta.env.VITE_API_DELAY_MS) || 0 : 0
 
+/**
+ * This tab's live updates connection (lib/liveUpdates.ts), sent with every change so the server's notice skips
+ * the tab that already reloads what it changed. Null while not connected.
+ */
+const CONNECTION_HEADER = 'X-Connection-Id'
+let liveConnectionId: () => string | null = () => null
+
+export function setLiveConnectionId(get: () => string | null) {
+  liveConnectionId = get
+}
+
 function readCookie(name: string): string | null {
   const prefix = `${name}=`
   const cookie = document.cookie.split('; ').find((c) => c.startsWith(prefix))
@@ -16,7 +27,7 @@ function readCookie(name: string): string | null {
 
 /**
  * Fetch used by the generated API client (see orval.config.ts).
- * Sends the auth cookie, adds the antiforgery header to state-changing requests,
+ * Sends the auth cookie, adds the antiforgery and live connection headers to state-changing requests,
  * and throws ApiError for non-2xx responses.
  */
 export async function customFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -25,6 +36,8 @@ export async function customFetch<T>(url: string, options: RequestInit = {}): Pr
   if (!SAFE_METHODS.includes(method)) {
     const token = readCookie(XSRF_COOKIE)
     if (token) headers.set(XSRF_HEADER, token)
+    const connectionId = liveConnectionId()
+    if (connectionId) headers.set(CONNECTION_HEADER, connectionId)
   }
 
   if (DEV_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, DEV_DELAY_MS))

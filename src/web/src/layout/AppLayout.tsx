@@ -12,6 +12,7 @@ import { FeedbackModal } from '../components/FeedbackModal'
 import { Logo } from '../components/Logo'
 import { QuickSearch } from '../components/QuickSearch'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { useLiveUpdates } from '../lib/liveUpdates'
 import { quickSearchShortcut } from '../lib/shortcut'
 import { useSlidingBox } from '../lib/useSlidingBox'
 import classes from './AppLayout.module.css'
@@ -31,6 +32,8 @@ export function AppLayout() {
   const pageWidth = usePageWidth()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  // Screens show changes made by others and by the shop without a reload.
+  useLiveUpdates()
   // The current page's background slides to the new item instead of jumping (DESIGN.md "Pokret").
   const nav = useRef<HTMLDivElement>(null)
   const current = useSlidingBox(nav, '[aria-current="page"]')

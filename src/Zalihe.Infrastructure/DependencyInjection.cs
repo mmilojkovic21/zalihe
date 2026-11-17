@@ -36,7 +36,9 @@ public static class DependencyInjection
     {
         // Connection string is resolved lazily so tests can override configuration.
         services.AddDbContext<AppDbContext>((sp, options) =>
-            options.UseNpgsql(sp.GetRequiredService<IConfiguration>().GetConnectionString("Default")));
+            options
+                .UseNpgsql(sp.GetRequiredService<IConfiguration>().GetConnectionString("Default"))
+                .AddInterceptors(DataChangeTransactionInterceptor.Instance));
         services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<TenantContext>();

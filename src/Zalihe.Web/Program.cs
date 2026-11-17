@@ -9,6 +9,7 @@ using Zalihe.Infrastructure.Persistence;
 using Zalihe.Web.Auth;
 using Zalihe.Web.Errors;
 using Zalihe.Web.Hosting;
+using Zalihe.Web.Realtime;
 using Zalihe.Web.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,8 @@ builder.Services.AddAppPolicies();
 builder.Services.AddRegistrationRateLimit(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IDataChangeNotifier, HubDataChangeNotifier>();
 
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = ApiProblems.AddDefaultCode);
 builder.Services
@@ -72,6 +75,8 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+// Closed when the sign-in expires, so a signed-out browser stops getting notices; it reconnects after signing in.
+app.MapHub<ChangesHub>(ChangesHub.Path, options => options.CloseOnAuthenticationExpiration = true);
 app.MapHealthChecks("/health");
 // An unknown API address is a 404 problem, not the React page.
 app.Map("/api/{**path}", () => Results.NotFound()).ExcludeFromDescription();
