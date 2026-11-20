@@ -1,81 +1,73 @@
 # Lagerko
 
-**Stock management for small webshops and businesses.** Lagerko shows how much stock a business actually has, where it went, and what needs reordering, wherever the business sells: its WooCommerce shop, Instagram, phone orders or a physical store.
+**Inventory and stock management SaaS for webshops and small businesses.**
+Live: [lagerko.com](https://lagerko.com)
 
-Live: [lagerko.com](https://lagerko.com) · Built and run by one person, from the data model to the server it runs on.
+Lagerko keeps stock in sync with WooCommerce webshops, records every stock movement as an immutable ledger, and gives small teams a fast web app (with barcode scanning) for receiving goods, processing orders and tracking inventory.
 
-> Working name in the code is **Zalihe** (Serbian for "stock").
+> Source is published for review only. See [LICENSE](LICENSE).
 
-## What it does
+---
 
-- **Items and variations:** SKU, barcode, categories, purchase and sales prices, minimum stock levels
-- **Stock movements:** receipts, sales, adjustments (stocktaking, write-offs) and returns, with a full history for every item
-- **WooCommerce integration:** connect a shop without copying API keys, import products and variations, deduct stock automatically when an order arrives, restore it when the order is cancelled, and push stock levels back to the shop
-- **CSV import** with column mapping, a preview and per-row validation errors
-- **Low-stock alerts** in the app and by email (at most one digest per company per day)
-- **Reports** for reordering, and real-time updates on open screens via SignalR
-- **Multi-tenant** with team invitations and roles; UI in Serbian (Latin) and English
+## Features
+
+- **Items & stock ledger.** Stock is never edited directly: it is always the sum of append-only movements (receipt, sale, return, adjustment to counted quantity).
+- **WooCommerce integration.** Connect a shop, import products, and process orders and stock updates via webhooks through a channel abstraction (`ISalesChannel`).
+- **Goods receipts and orders.** Receive deliveries, handle incoming orders and returns.
+- **CSV import.** Bulk import of items.
+- **Low-stock alerts, dashboard and reports.**
+- **Real-time updates** across open sessions via SignalR.
+- **Barcode scanning** in the browser.
+- **Multi-tenant.** Many companies share one database with strict isolation.
+- **Localization** (i18next).
 
 ## Tech stack
 
-| Layer | |
+| Area | Technologies |
 |---|---|
-| Backend | .NET 10, ASP.NET Core, EF Core, PostgreSQL, Hangfire (Postgres storage), SignalR, ASP.NET Core Identity |
-| Frontend | React, TypeScript, Vite, TanStack Query, React Router, Mantine, react-i18next |
-| API contract | OpenAPI; the TypeScript client is generated with Orval, never written by hand |
-| Testing | xUnit, NSubstitute, Shouldly, Testcontainers, WebApplicationFactory, Vitest, React Testing Library |
-| Infrastructure | Docker Compose, Caddy, GitHub Actions CI/CD to a self-hosted server |
+| Backend | .NET 10, ASP.NET Core, EF Core, ASP.NET Core Identity, SignalR, Hangfire, MailKit, OpenAPI |
+| Database | PostgreSQL |
+| Frontend | React, TypeScript, Vite, Mantine, TanStack Query, React Router, Orval (typed API client generated from OpenAPI) |
+| Testing | xUnit, Testcontainers (real PostgreSQL), WebApplicationFactory, Vitest, React Testing Library |
+| DevOps | Docker, Docker Compose, Nginx, GitHub Actions CI/CD, self-hosted Linux server |
 
-## Design decisions
+## Architecture
 
-- **Stock is never edited directly.** Every change is an append-only `StockMovement`, and `StockLevel` is updated in the same transaction. Movements are never changed or deleted; mistakes are fixed with a correcting movement. This keeps a full audit trail and makes the current stock always explainable.
-- **Tenant isolation in one shared database.** Every company-owned table has a `TenantId`, filtered through EF Core global query filters, never by hand in queries. Integration tests check that company A can never see company B's data.
-- **Clean Architecture, kept light.** `Domain`, `Application`, `Infrastructure` and `Web` projects, but no MediatR, CQRS or event sourcing: plain services with clear methods.
-- **API first, ready for mobile.** All business logic lives in the API, lists are paginated and filtered on the server, errors use `ProblemDetails` with error codes the frontend translates, and auth is set up to accept bearer tokens later for a React Native app.
-- **Privacy by default.** No customer personal data from orders is stored. Shop API keys are encrypted with ASP.NET Data Protection.
-- **Sales channels behind an interface** (`ISalesChannel`), so WooCommerce is the first integration, not a hard dependency.
+A pragmatic Clean Architecture ("light"): clear layers, no MediatR/CQRS ceremony.
+
+```
+Zalihe.Web  ──►  Zalihe.Infrastructure  ──►  Zalihe.Application  ──►  Zalihe.Domain
+(HTTP, SignalR)  (EF Core, Identity,         (use cases,              (entities,
+                  WooCommerce, jobs)          interfaces)              business rules)
+```
+
+Inner layers never depend on outer ones. The domain has no framework dependencies, so core rules (stock calculation, order processing) are tested in milliseconds without a database.
+
+### Tenant isolation
+
+Data isolation does not rely on developers remembering a `WHERE TenantId = …`:
+
+1. The tenant id is stored as a claim in the auth cookie.
+2. Middleware sets a per-request `TenantContext`.
+3. An EF Core **global query filter** is applied automatically to every tenant-owned entity.
+4. Queries without a tenant throw, and `SaveChanges` rejects writes for a different tenant.
+
+A dedicated test fails if anyone adds a tenant-owned entity without the filter.
+
+### Concurrency-safe stock
+
+Each movement runs in a transaction that locks the item's stock row (`SELECT … FOR UPDATE`), so simultaneous movements for the same item (e.g. a webhook and a user) are serialized and the stock always equals the sum of movements.
 
 ## Testing
 
-- **~550 backend tests:** fast unit tests for domain rules (stock calculation, order processing) and integration tests against a real PostgreSQL database via Testcontainers
-- **Frontend tests** with Vitest for components with logic: forms, validation, number formatting
-- WooCommerce is never called in tests; a fake `ISalesChannel` or HTTP handler is used instead
-- Every push to `main` or `dev` runs all tests, builds and lints the frontend, then deploys `main` to production and `dev` to a separate dev environment
+- ~550 backend tests across domain, application and integration test projects
+- Integration tests run against a **real PostgreSQL** in Docker (Testcontainers), not an in-memory fake
+- ~50 frontend test files (Vitest + React Testing Library)
 
-## Project structure
+## CI/CD
 
-```
-src/
-  Zalihe.Domain/          entities and domain rules, no dependencies
-  Zalihe.Application/     services and use cases, interfaces (e.g. ISalesChannel)
-  Zalihe.Infrastructure/  EF Core, WooCommerce client, email, Hangfire jobs
-  Zalihe.Web/             API controllers, webhook endpoints, serves the React build
-  web/                    React app (Vite)
-tests/
-  Zalihe.Domain.Tests/
-  Zalihe.Application.Tests/
-  Zalihe.IntegrationTests/
-deploy/                   production Docker Compose, Caddy, backup and deploy scripts
-docs/                     spec, architecture, design and deployment notes (Serbian)
-```
+Every push to `main` or `dev` runs backend and frontend tests, the frontend build and the linter in GitHub Actions. On success it deploys over SSH to the matching environment (beta / dev) on a self-hosted server running Docker Compose behind Nginx.
 
-## Running locally
+---
 
-Requirements: .NET 10 SDK, Node.js 24, Docker.
-
-```bash
-docker compose up -d --wait                                # Postgres (5433), WordPress + WooCommerce (8080), Mailpit (8025)
-dotnet run --project src/Zalihe.Web --launch-profile http  # API on http://localhost:5131
-cd src/web && npm install && npm run dev                   # React on http://localhost:5173
-
-# Optional: set up a WooCommerce test shop with sample products
-docker compose run --rm wpcli bash /scripts/setup.sh
-
-dotnet test                                                # all .NET tests
-cd src/web && npm test                                     # frontend tests
-```
-
-## Author
-
-Miljan Milojković: full-stack engineer (C# / .NET, React / TypeScript, PostgreSQL) from Niš, Serbia.
-[miljanmilojkovic.com](https://miljanmilojkovic.com) · [LinkedIn](https://linkedin.com/in/miljan-milojkovic-682878200)
+**Author:** Miljan Milojković · [miljanmilojkovic.com](https://miljanmilojkovic.com) · [LinkedIn](https://www.linkedin.com/in/miljan-milojkovic-682878200/)
