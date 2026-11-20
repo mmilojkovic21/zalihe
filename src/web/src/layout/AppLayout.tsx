@@ -1,5 +1,5 @@
 import { ActionIcon, AppShell, Box, Group, NavLink, Stack, Text, UnstyledButton } from '@mantine/core'
-import { useDisclosure, useHotkeys } from '@mantine/hooks'
+import { useHotkeys } from '@mantine/hooks'
 import { IconLogout, IconMessage2, IconSearch } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { type CSSProperties, useRef } from 'react'
@@ -15,6 +15,7 @@ import { ThemeToggle } from '../components/ThemeToggle'
 import { useLiveUpdates } from '../lib/liveUpdates'
 import { quickSearchShortcut } from '../lib/shortcut'
 import { useSlidingBox } from '../lib/useSlidingBox'
+import { useUiStore } from '../stores/ui'
 import classes from './AppLayout.module.css'
 import { ChannelAlert } from './ChannelAlert'
 import { navItemsFor, PHONE_TABS } from './navItems'
@@ -23,10 +24,14 @@ import { PhoneTabs } from './PhoneTabs'
 
 export function AppLayout() {
   const { t } = useTranslation()
-  const [searching, search] = useDisclosure()
-  const [writing, feedback] = useDisclosure()
+  const quickSearchOpen = useUiStore((s) => s.quickSearchOpen)
+  const feedbackOpen = useUiStore((s) => s.feedbackOpen)
+  const openQuickSearch = useUiStore((s) => s.openQuickSearch)
+  const closeQuickSearch = useUiStore((s) => s.closeQuickSearch)
+  const openFeedback = useUiStore((s) => s.openFeedback)
+  const closeFeedback = useUiStore((s) => s.closeFeedback)
   // Also from inside a field: Ctrl+K never types anything.
-  useHotkeys([['mod+K', search.open]], [])
+  useHotkeys([['mod+K', openQuickSearch]], [])
   const { user } = useCurrentUser()
   const items = navItemsFor(usePermissions())
   const pageWidth = usePageWidth()
@@ -73,7 +78,7 @@ export function AppLayout() {
 
   // Under the menu, so it is on every screen without competing with the screen's own actions (SPEC 11.10).
   const sendFeedback = (
-    <UnstyledButton className={`z-focus ${classes.feedback}`} onClick={feedback.open}>
+    <UnstyledButton className={`z-focus ${classes.feedback}`} onClick={openFeedback}>
       <IconMessage2 size={16} stroke={1.8} className={classes.feedbackIcon} />
       {t('feedback.open')}
     </UnstyledButton>
@@ -89,7 +94,7 @@ export function AppLayout() {
       <AppShell.Header hiddenFrom="sm" className={classes.header}>
         <Group h="100%" px="md" gap="sm">
           <Logo />
-          <ActionIcon ml="auto" size={44} onClick={search.open} aria-label={t('common.quickSearch.open')}>
+          <ActionIcon ml="auto" size={44} onClick={openQuickSearch} aria-label={t('common.quickSearch.open')}>
             <IconSearch size={20} stroke={1.8} />
           </ActionIcon>
         </Group>
@@ -101,7 +106,7 @@ export function AppLayout() {
             <Box px={8}>
               <Logo />
             </Box>
-            <UnstyledButton className={`z-focus ${classes.find}`} onClick={search.open}>
+            <UnstyledButton className={`z-focus ${classes.find}`} onClick={openQuickSearch}>
               <IconSearch size={16} stroke={1.8} />
               {t('common.quickSearch.open')}
               <span className={classes.kbd}>{quickSearchShortcut}</span>
@@ -142,8 +147,8 @@ export function AppLayout() {
         <PhoneTabs tabs={items.slice(0, PHONE_TABS)} more={items.slice(PHONE_TABS)} account={account} feedback={sendFeedback} />
       </AppShell.Footer>
 
-      {searching && <QuickSearch onClose={search.close} />}
-      <FeedbackModal opened={writing} onClose={feedback.close} />
+      {quickSearchOpen && <QuickSearch onClose={closeQuickSearch} />}
+      <FeedbackModal opened={feedbackOpen} onClose={closeFeedback} />
 
       <AppShell.Main>
         <Box className={classes.main} data-width={pageWidth}>

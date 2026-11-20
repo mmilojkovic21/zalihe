@@ -593,6 +593,7 @@ src/web/
     ├── pages/              ekrani: LoginPage, RegisterPage, HomePage
     ├── components/         male zajedničke komponente (Logo, Eyebrow, LanguageSwitch)
     ├── lib/format.ts       formatiranje brojeva i datuma preko Intl
+    ├── stores/ui.ts        Zustand: UI stanje cele aplikacije (brza pretraga, forma za utisak)
     └── test/               podešavanje testova i pomoćne funkcije
 ```
 
@@ -603,6 +604,12 @@ src/web/
 4. Komponente koriste hookove. Ako se API promeni, TypeScript odmah pokaže gde frontend više ne odgovara.
 
 `openapi.json` se commituje, pa se u git diff-u vidi svaka promena API-ja.
+
+**Gde živi stanje.**
+- Podaci sa servera: TanStack Query (generisani hookovi), nikad kopija u drugom stanju.
+- Deljeno UI stanje koje otvara više ekrana (brza pretraga, forma za utisak): Zustand, `stores/ui.ts`.
+- Lokalno stanje jednog ekrana ili komponente: `useState`.
+- Filteri, pretraga i strana tabele: URL, pa link i dugme Nazad čuvaju prikaz.
 
 **`vite.config.ts`**: **proxy** `/api` → `http://localhost:5131` (promenljiva `API_URL` ga preusmerava, npr. `API_URL=http://localhost:5199 npm run dev`). U razvoju browser priča samo sa Vite-om (5173), a Vite prosleđuje API pozive backendu. Browser zato vidi jednu adresu, cookie radi bez CORS podešavanja, a produkcija izgleda isto (ASP.NET servira i React i API sa iste adrese). Tu je i podešavanje Vitest-a (jsdom, `src/test/setup.ts`).
 
